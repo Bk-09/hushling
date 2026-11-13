@@ -1,0 +1,34 @@
+name: calm
+description: A gentle companion app for panic, anxiety, stress and everyday positivity.
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.3.0   # saved data (companion, levels, gratitude tree, sound preference)
+  audioplayers: ^6.1.0         # plays the sounds that are generated in code
+  path_provider: ^2.1.0        # temp folder where generated sounds are written before playing
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/pets/
+
+  # Optional font (same as the Python app): download Nunito (free, OFL) from Google Fonts,
+  # put Nunito-Regular.ttf and Nunito-Bold.ttf into assets/fonts/, then uncomment this block
+  # and set kFontFamily = 'Nunito' in lib/core/util.dart.
+  # fonts:
+  #   - family: Nunito
+  #     fonts:
+  #       - asset: assets/fonts/Nunito-Regular.ttf
+  #       - asset: assets/fonts/Nunito-Bold.ttf
+  #         weight: 700
