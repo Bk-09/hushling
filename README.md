@@ -3,7 +3,7 @@
 Flutter port of the Pygame "Calm" app: panic (flame breathing + grounding + landing), anxiety, stress,
 positivity, and the companion pet. All sounds are generated in code; saved data uses shared_preferences.
 
-## One-time setup (this zip has no android/ windows/ folders yet)
+## One-time setup 
 1. Unzip, open the `calm_flutter` folder in VS Code.
 2. In the VS Code terminal, in that folder:
    ```
@@ -19,5 +19,5 @@ Needs "Desktop development with C++" (Visual Studio 2022). Check with `flutter d
 Build: `flutter build windows` -> build\windows\x64\runner\Release\
 
 ## Android
-Phone with USB debugging, or an emulator, then `flutter run`. Build: `flutter build apk`.
-The app is landscape-only on phones (the 900x600 stage scales to fit).
+Download the file 
+
