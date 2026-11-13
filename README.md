@@ -19,5 +19,5 @@ Needs "Desktop development with C++" (Visual Studio 2022). Check with `flutter d
 Build: `flutter build windows` -> build\windows\x64\runner\Release\
 
 ## Android
-Download the file 
+Download the apk file and allow install: https://github.com/Bk-09/hushling/releases/tag/v0.1.0
 
