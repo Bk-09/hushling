@@ -12,11 +12,26 @@ dependencies:
   shared_preferences: ^2.3.0   # saved data (companion, levels, gratitude tree, sound preference)
   audioplayers: ^6.1.0         # plays the sounds that are generated in code
   path_provider: ^2.1.0        # temp folder where generated sounds are written before playing
+  
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  image_path: "assets/icon/icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: "assets/icon/icon.png"
+  windows:
+    generate: true
+    image_path: "assets/icon/icon.png"
+    icon_size: 256
 
 flutter:
   uses-material-design: true
