@@ -4,20 +4,11 @@ Flutter port of the Pygame "Calm" app: panic (flame breathing + grounding + land
 positivity, and the companion pet. All sounds are generated in code; saved data uses shared_preferences.
 
 ## One-time setup 
-1. Unzip, open the `calm_flutter` folder in VS Code.
-2. In the VS Code terminal, in that folder:
-   ```
-   flutter create . --project-name calm --platforms=windows,android
-   flutter pub get
-   ```
-   (`flutter create .` only adds the platform folders; it keeps lib/ and pubspec.yaml.
-   If it overwrote pubspec.yaml, re-check that `assets/pets/` and the 3 dependencies are still there.)
-3. Run: `flutter run -d windows` (or pick a device at the bottom-right of VS Code).
+https://bk-09.itch.io/hushling --> Available for android, coming soon on Google Play Store! 
 
-## Windows desktop
-Needs "Desktop development with C++" (Visual Studio 2022). Check with `flutter doctor`.
-Build: `flutter build windows` -> build\windows\x64\runner\Release\
-
-## Android
-Download the apk file and allow install: https://github.com/Bk-09/hushling/releases/tag/v0.1.0
+<img width="300" height="700" alt="Customise_ss" src="https://github.com/user-attachments/assets/d68be12c-c2b5-49f2-b1c3-85b5e3db73fa" />
+<img width="300" height="700" alt="breathing_ss" src="https://github.com/user-attachments/assets/9101daea-1b4f-4c0e-830a-5ac39797d860" />
+<img width="300" height="700" alt="anxious_ss" src="https://github.com/user-attachments/assets/064e88cb-d35d-4e17-8a48-c2cac1736fe3" />
+<img width="300" height="700" alt="Landing_ss" src="https://github.com/user-attachments/assets/9226ecb4-86fb-41c2-8c50-ddb100927d08" />
+<img width="300" height="700" alt="grounding_ss" src="https://github.com/user-attachments/assets/89a3695a-bf08-4766-a3d8-964171cd74d4" />
 
