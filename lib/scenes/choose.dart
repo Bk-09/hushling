@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../core/companion.dart';
+import '../core/layout.dart';
 import '../core/palette.dart';
 import '../core/pets.dart';
 import '../core/ui.dart';
@@ -9,9 +10,8 @@ import '../core/util.dart';
 import '../nav.dart';
 
 const int _maxName = 14;
-const int _cols = 5, _rows = 3;
-const int _perPage = _cols * _rows;
-const double _gridX = 344, _gridY = 158, _cellW = 106, _cellH = 112;
+const int _cols = 5;
+const double _cellH = 112;
 const double _petPx = 78;
 
 class _Tab {
@@ -39,10 +39,24 @@ class _ChooseSceneState extends State<ChooseScene> with SceneLoop {
   final List<_Tab> _tabs = <_Tab>[];
   Offset _mouse = const Offset(-100, -100);
 
-  final Rect _prevRect = Rect.fromCenter(center: const Offset(_gridX + _cellW * _cols / 2 - 90, 530), width: 46, height: 36);
-  final Rect _nextRect = Rect.fromCenter(center: const Offset(_gridX + _cellW * _cols / 2 + 90, 530), width: 46, height: 36);
-  final Rect _preview = Rect.fromLTWH(24, 110, 300, 300);
-  final Rect _box = Rect.fromLTWH(24, 462, 300, 48);
+  // ---- layout: landscape (900 x 600) or portrait (600 x tall). Everything that moves between the
+  // two is a getter, so the rest of the code reads the same for both.
+  bool get _port => Layout.portrait;
+  int get _rows => _port ? (Layout.h >= 1100 ? 3 : 2) : 3; // 3 rows of friends fit on tall phones
+  int get _perPage => _cols * _rows;
+  double get _cellW => _port ? 104 : 106;
+  double get _gridX => _port ? 40 : 344;
+  // portrait: a share of any spare height on very tall phones goes between the sections
+  double get _dy => _port ? ((Layout.h - (_rows == 3 ? 1100 : 1000)) * 0.3).clamp(0.0, 110.0).toDouble() : 0.0;
+  double get _tabsY => _port ? 548 + _dy : 112;
+  double get _gridY => _port ? 592 + _dy : 158;
+  double get _pagerY => _port ? _gridY + _rows * _cellH + 22 : 530;
+  Rect get _prevRect =>
+      Rect.fromCenter(center: Offset(_gridX + _cellW * _cols / 2 - 90, _pagerY), width: 46, height: 36);
+  Rect get _nextRect =>
+      Rect.fromCenter(center: Offset(_gridX + _cellW * _cols / 2 + 90, _pagerY), width: 46, height: 36);
+  Rect get _preview => _port ? Rect.fromLTWH(190, 176 + _dy, 220, 220) : const Rect.fromLTWH(24, 110, 300, 300);
+  Rect get _box => _port ? Rect.fromLTWH(100, 480 + _dy, 400, 48) : const Rect.fromLTWH(24, 462, 300, 48);
 
   @override
   void initState() {
@@ -74,7 +88,7 @@ class _ChooseSceneState extends State<ChooseScene> with SceneLoop {
     if (groups.isEmpty) return;
     final w = ((_cellW * _cols) / groups.length).floorToDouble();
     for (var i = 0; i < groups.length; i++) {
-      _tabs.add(_Tab(groups[i][0], groups[i][1], Rect.fromLTWH(_gridX + i * w + 2, 112, w - 4, 32)));
+      _tabs.add(_Tab(groups[i][0], groups[i][1], Rect.fromLTWH(_gridX + i * w + 2, _tabsY, w - 4, 32)));
     }
   }
 
@@ -193,26 +207,27 @@ class _ChooseSceneState extends State<ChooseScene> with SceneLoop {
   }
 
   void _draw(Canvas c) {
-    drawAmbientBg(c);
+    drawAmbientBg(c, w: Layout.w, h: Layout.h);
     final comp = Companion.I;
-    const cx = kW / 2;
+    final cx = Layout.w / 2;
     final t = nowSeconds();
+    final ty = _port ? 112.0 : 48.0; // title row; the subtitle sits 36 below
+    final sub = _editing
+        ? 'Your bond and growth stay exactly as they are.'
+        : 'They start small, and grow with you at your own pace.';
 
-    if (_editing) {
-      drawText(c, 'Customize $_snapName', 38, kText, const Offset(cx, 48), bold: true);
-      drawText(c, 'Your bond and growth stay exactly as they are.', 20, kTextDim, const Offset(cx, 84));
-    } else {
-      drawText(c, 'Choose your companion', 38, kText, const Offset(cx, 48), bold: true);
-      drawText(c, 'They start small, and grow with you at your own pace.', 20, kTextDim, const Offset(cx, 84));
-    }
+    drawText(c, _editing ? 'Customize $_snapName' : 'Choose your companion', 38, kText, Offset(cx, ty),
+        bold: true);
+    drawText(c, sub, _fit(sub, 560, 20), kTextDim, Offset(cx, ty + 36));
 
     // ---- big preview of the pick
     drawGlass(c, _preview, radius: 30, alpha: 140);
-    comp.draw(c, Offset(_preview.center.dx, 262), 220, full: true, petIdOverride: comp.petId);
-    drawText(c, Pets.nameOf(comp.petId), 26, kText, Offset(_preview.center.dx, 432), bold: true);
+    comp.draw(c, Offset(_preview.center.dx, _preview.center.dy + 2), _port ? _preview.height * 0.73 : 220,
+        full: true, petIdOverride: comp.petId);
+    drawText(c, Pets.nameOf(comp.petId), 26, kText, Offset(_preview.center.dx, _preview.bottom + 22), bold: true);
 
     // ---- name
-    drawText(c, 'Their name', 18, kTextDim, const Offset(24 + 150, 450));
+    drawText(c, 'Their name', 18, kTextDim, Offset(_box.center.dx, _box.top - 12));
     drawGlass(c, _box, radius: 22, alpha: 200);
 
     // ---- the friends: tabs, grid, pager
@@ -246,9 +261,11 @@ class _ChooseSceneState extends State<ChooseScene> with SceneLoop {
       _arrow(c, _prevRect, -1);
       _arrow(c, _nextRect, 1);
       drawText(c, '${_page + 1} / $n', 20, kTextDim,
-          Offset((_prevRect.center.dx + _nextRect.center.dx) / 2, 530));
+          Offset((_prevRect.center.dx + _nextRect.center.dx) / 2, _pagerY));
     }
-    drawText(c, 'Tap a friend to meet them', 17, kTextDim, const Offset(_gridX + _cellW * _cols / 2, 574));
+    if (!_port) {
+      drawText(c, 'Tap a friend to meet them', 17, kTextDim, Offset(_gridX + _cellW * _cols / 2, 574));
+    }
   }
 
   @override
@@ -269,7 +286,7 @@ class _ChooseSceneState extends State<ChooseScene> with SceneLoop {
               onPointerSignal: (e) {
                 if (e is PointerScrollEvent &&
                     _pages() > 1 &&
-                    Rect.fromLTWH(_gridX, 104, _cellW * _cols, 440).contains(e.localPosition)) {
+                    Rect.fromLTWH(_gridX, _tabsY - 8, _cellW * _cols, _rows * _cellH + 104).contains(e.localPosition)) {
                   _flip(e.scrollDelta.dy < 0 ? -1 : 1);
                 }
               },
@@ -286,7 +303,7 @@ class _ChooseSceneState extends State<ChooseScene> with SceneLoop {
             onSubmit: _finish,
           ),
           CalmButton(
-            rect: Rect.fromLTWH(24, 530, 300, 56),
+            rect: _port ? Rect.fromLTWH(40, Layout.h - 124, 520, 60) : Rect.fromLTWH(24, 530, 300, 56),
             title: _editing ? 'Save changes' : 'Begin together',
             color: kAccent,
             hoverColor: kAccentHover,
@@ -296,7 +313,7 @@ class _ChooseSceneState extends State<ChooseScene> with SceneLoop {
           ),
           if (_editing)
             CalmButton(
-              rect: Rect.fromLTWH(24, 24, 110, 40),
+              rect: _port ? Rect.fromLTWH(24, 50, 110, 40) : Rect.fromLTWH(24, 24, 110, 40),
               title: 'Cancel',
               textColor: kTextDim,
               titleSize: 18,

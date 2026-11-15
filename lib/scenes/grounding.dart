@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../core/companion.dart';
+import '../core/layout.dart';
 import '../core/palette.dart';
 import '../core/sound.dart';
 import '../core/ui.dart';
@@ -81,45 +82,55 @@ class _GroundingSceneState extends State<GroundingScene> with SceneLoop {
   }
 
   void _draw(Canvas c) {
-    drawGradientBg(c, kDuskTop, kDuskBottom, grain: 0.7);
+    drawGradientBg(c, kDuskTop, kDuskBottom, grain: 0.7, w: Layout.w, h: Layout.h);
     if (_i >= kSteps.length) return;
-    const cx = kW / 2;
+    final port = Layout.portrait;
+    final cx = Layout.w / 2;
+    final textW = port ? 520.0 : 640.0;
+    final ext = port ? ((Layout.h - 1000) * 0.3).clamp(0.0, 90.0).toDouble() : 0.0; // spare height on tall phones
 
     // slow, quiet glow at the top (breathing rhythm, ~10 s per cycle)
     final pulse = 0.5 + 0.5 * math.sin(_t * 0.63);
-    drawGlow(c, const Offset(cx, 100), 200 * (0.45 + 0.12 * pulse), kGlowOrange,
+    drawGlow(c, Offset(cx, port ? 190 + ext : 100), (port ? 240 : 200) * (0.45 + 0.12 * pulse), const Color(0xFF4FA3FF),
         strength: 150, opacity: (120 + 70 * pulse) / 255);
 
     final step = kSteps[_i];
     final a = math.min(1.0, _stepT / 0.8);
 
-    drawText(c, step.label.toUpperCase(), 20, kDuskDim, const Offset(cx, 180), alpha: a);
+    drawText(c, step.label.toUpperCase(), 20, kDuskDim, Offset(cx, port ? 320 + ext : 180), alpha: a);
 
-    var y = 225.0;
-    for (final line in wrapText(step.main, 34, true, 640)) {
-      drawText(c, line, 34, kDuskText, Offset(cx, y), bold: true, alpha: a);
-      y += 42;
+    final mainSize = port ? 36.0 : 34.0, hintSize = port ? 24.0 : 22.0;
+    var y = port ? 372.0 + ext : 225.0;
+    for (final line in wrapText(step.main, mainSize, true, textW)) {
+      drawText(c, line, mainSize, kDuskText, Offset(cx, y), bold: true, alpha: a);
+      y += port ? 46 : 42;
     }
     y += 28;
-    for (final line in wrapText(step.hint, 22, false, 640)) {
-      drawText(c, line, 22, kDuskDim, Offset(cx, y), alpha: a * 0.9);
-      y += 29;
+    for (final line in wrapText(step.hint, hintSize, false, textW)) {
+      drawText(c, line, hintSize, kDuskDim, Offset(cx, y), alpha: a * 0.9);
+      y += port ? 32 : 29;
     }
 
     // progress dots (no numbers, nothing to "fail")
     const n = 7;
     final x0 = cx - (n - 1) * 14;
+    final dotsY = port ? Layout.h - 240 : 452.0;
     for (var k = 0; k < n; k++) {
-      final col = k <= _i ? const Color(0xFFF0BE96) : const Color(0xFF6E5882);
-      c.drawCircle(Offset(x0 + k * 28, 452), 5, Paint()..color = col);
+      final col = k <= _i ? const Color(0xFF8FCBFF) : const Color(0xFF3A4D80);
+      c.drawCircle(Offset(x0 + k * 28, dotsY), 5, Paint()..color = col);
     }
 
-    // companion keeps you company in the corner
-    Companion.I.draw(c, const Offset(810, 480), 130, mood: 'calm');
+    // companion keeps you company (in the glow at the top on a phone, in the corner on a wide screen)
+    if (port) {
+      Companion.I.draw(c, Offset(cx, 190 + ext), 170, mood: 'calm');
+    } else {
+      Companion.I.draw(c, const Offset(810, 480), 130, mood: 'calm');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final port = Layout.portrait;
     return EscScope(
       onEsc: () => Nav.I.go('home'),
       child: Stack(
@@ -127,7 +138,7 @@ class _GroundingSceneState extends State<GroundingScene> with SceneLoop {
         children: [
           Positioned.fill(child: paintLayer(_draw)),
           CalmButton(
-            rect: Rect.fromLTWH(kW / 2 - 150, 480, 300, 60),
+            rect: port ? Rect.fromLTWH(40, Layout.h - 200, 520, 76) : Rect.fromLTWH(kW / 2 - 150, 480, 300, 60),
             title: 'Done',
             color: kDark,
             hoverColor: kDarkHover,
@@ -136,7 +147,7 @@ class _GroundingSceneState extends State<GroundingScene> with SceneLoop {
             onTap: _advance,
           ),
           CalmButton(
-            rect: Rect.fromLTWH(kW / 2 - 90, 550, 180, 38),
+            rect: port ? Rect.fromLTWH(40, Layout.h - 108, 250, 44) : Rect.fromLTWH(kW / 2 - 200, 550, 190, 38),
             title: 'Skip this one',
             color: kSoft,
             hoverColor: kSoftHover,
@@ -144,8 +155,18 @@ class _GroundingSceneState extends State<GroundingScene> with SceneLoop {
             titleSize: 18,
             onTap: _advance,
           ),
+          // a clear way on to the last step, so nobody has to find it by finishing every prompt
           CalmButton(
-            rect: Rect.fromLTWH(24, 24, 110, 40),
+            rect: port ? Rect.fromLTWH(310, Layout.h - 108, 250, 44) : Rect.fromLTWH(kW / 2 + 10, 550, 190, 38),
+            title: 'Next: gentle landing',
+            color: kSoft,
+            hoverColor: kSoftHover,
+            textColor: kDuskText,
+            titleSize: 18,
+            onTap: () => Nav.I.go('landing'),
+          ),
+          CalmButton(
+            rect: port ? Rect.fromLTWH(24, 50, 110, 40) : Rect.fromLTWH(24, 24, 110, 40),
             title: 'Leave',
             color: kSoft,
             hoverColor: kSoftHover,
@@ -154,7 +175,7 @@ class _GroundingSceneState extends State<GroundingScene> with SceneLoop {
             onTap: () => Nav.I.go('home'),
           ),
           SoundButton(
-            rect: Rect.fromLTWH(kW - 124, 72, 100, 36),
+            rect: port ? Rect.fromLTWH(Layout.w - 124, 56, 100, 36) : Rect.fromLTWH(kW - 124, 72, 100, 36),
             color: kSoft,
             hoverColor: kSoftHover,
             textColor: kDuskDim,

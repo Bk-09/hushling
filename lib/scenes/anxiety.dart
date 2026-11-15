@@ -2,13 +2,16 @@
 // Gentle level: tap the water, let worries float away on leaves.
 // Deeper level: "Lotus Echo", a gentle listen-and-echo game with no wrong answers.
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../core/companion.dart';
+import '../core/layout.dart';
 import '../core/levels.dart';
 import '../core/palette.dart';
+import '../core/scene_art.dart';
 import '../core/sound.dart';
 import '../core/ui.dart';
 import '../core/util.dart';
@@ -19,11 +22,19 @@ const Color _skyBottom = Color(0xFFEEB6B0);
 const Color _waterTop = Color(0xFF9C9AD4);
 const Color _waterBottom = Color(0xFFC69ABA);
 
-const Rect _pond = Rect.fromLTWH(70, 380, 800, 210);
-const double _pcx = 70 + 800 / 2;
-const double _pcy = 380 + 210 / 2;
-const double _prx = 800 / 2;
-const double _pry = 210 / 2;
+// Portrait: the picture (assets/scenes/pond_bg.jpg, 600 wide, drawn from the top) supplies the sky, the pond
+// and the lotus flowers. These are the lotus centres in that picture (stage units).
+const String _pondArt = 'pond_bg2.jpg';
+const List<List<double>> _lotusArt = [
+  [74, 439],
+  [302, 454],
+  [411, 480],
+  [466, 406],
+  [538, 423],
+];
+const double _artH = 1300;
+
+const Rect _pondLand = Rect.fromLTWH(70, 380, 800, 210);
 
 const List<double> _penta = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50];
 const double _leafLife = 27.0;
@@ -69,12 +80,36 @@ const List<String> _doneLines = ['Lovely.', 'Beautifully echoed.', 'Nicely done.
 
 Color _c(int r, int g, int b, [int a = 255]) => Color.fromARGB(a, r, g, b);
 
-bool _inPond(double x, double y, [double margin = 0.92]) =>
-    math.pow((x - _pcx) / _prx, 2) + math.pow((y - _pcy) / _pry, 2) <= margin * margin;
 
 void _ellipse(Canvas c, double x, double y, double rx, double ry, Color col) {
   c.drawOval(Rect.fromCenter(center: Offset(x, y), width: math.max(2, rx * 2), height: math.max(2, ry * 2)),
       Paint()..color = col);
+}
+
+/// The lily pad the companion rests on: soft grey-green like the pads in the picture.
+void _drawMat(Canvas c, double x, double y0, double w, double t) {
+  final y = y0 + 1.2 * math.sin(t * 0.8);
+  final pad = SceneArt.get('lily_pad.png');
+  if (pad != null) {
+    final dw = w * 0.9, dh = dw * pad.height / pad.width;
+    drawSoftEllipse(c, Offset(x, y + dh * 0.35), dw * 0.95, dh * 0.5, _c(60, 56, 110), 90);
+    drawArt(c, pad, Rect.fromCenter(center: Offset(x, y), width: dw, height: dh));
+    c.drawOval(Rect.fromCenter(center: Offset(x, y), width: dw * 0.96, height: dh * 0.9),
+        Paint()..color = const Color(0x55B89AE8));
+    return;
+  }
+  final h = w * 0.30;
+  drawSoftEllipse(c, Offset(x, y + h * 0.55), w * 0.62, h * 0.9, _c(92, 70, 150), 90);
+  _ellipse(c, x, y + 2.5, w / 2, h / 2, _c(112, 104, 168));
+  _ellipse(c, x, y, w / 2, h / 2, _c(138, 168, 166));
+  _ellipse(c, x - w * 0.06, y - h * 0.10, w * 0.38, h * 0.30, _c(170, 196, 190));
+  c.drawLine(
+      Offset(x, y),
+      Offset(x + w * 0.47, y + h * 0.10),
+      Paint()
+        ..color = _c(108, 140, 150)
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke);
 }
 
 void _drawPad(Canvas c, double x, double y0, double w, double t, double ph) {
@@ -146,20 +181,30 @@ void _drawLotus(Canvas c, double x, double y, double size, double o0) {
 }
 
 void _drawRing(Canvas c, double lx, double ly, double age, double strength) {
-  for (var k = 0; k < 3; k++) {
-    final a = age - k * 0.5;
+  // several soft rings: a pale crest with a faint violet shadow beneath it, thinning as they spread
+  for (var k = 0; k < 4; k++) {
+    final a = age - k * 0.42;
     if (a <= 0) continue;
-    final rad = a * 52;
-    final ry = rad * 0.30;
-    if (ry < 3) continue;
-    final al = 150 * strength * math.pow(math.max(0.0, 1 - a / 3.8), 1.5) * (1 - 0.22 * k);
+    final rad = 6 + a * 46;
+    final ry = rad * 0.27;
+    if (ry < 2) continue;
+    final life = math.pow(math.max(0.0, 1 - a / 4.2), 1.6).toDouble();
+    final al = 190 * strength * life * (1 - 0.2 * k);
     if (al <= 1) continue;
+    final w = (2.4 - 0.4 * k) * (0.6 + 0.4 * life);
+    final r = Rect.fromCenter(center: Offset(lx, ly), width: 2 * rad, height: 2 * ry);
     c.drawOval(
-        Rect.fromCenter(center: Offset(lx, ly), width: 2 * rad, height: 2 * ry),
+        r.shift(const Offset(0, 1.8)),
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2
-          ..color = _c(255, 255, 255, al.round().clamp(0, 255)));
+          ..strokeWidth = w + 1.2
+          ..color = _c(96, 70, 150, (al * 0.35).round().clamp(0, 255)));
+    c.drawOval(
+        r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = w
+          ..color = _c(255, 250, 255, al.round().clamp(0, 255)));
   }
 }
 
@@ -168,10 +213,10 @@ class _Firefly {
   late final double ax, ay, rx, ry, s1, s2, s3, p1, p2, p3, size;
   double pullX = 0, pullY = 0;
 
-  _Firefly(math.Random r) {
+  _Firefly(math.Random r, double w, double h) {
     double u(double a, double b) => a + r.nextDouble() * (b - a);
-    ax = u(40, kW - 40);
-    ay = u(80, 520);
+    ax = u(40, w - 40);
+    ay = u(80, h);
     rx = u(25, 70);
     ry = u(14, 40);
     s1 = u(0.10, 0.26);
@@ -219,6 +264,20 @@ class _WorryLeaf {
 
   /// Draws the leaf centred on the origin.
   void draw(Canvas c) {
+    final pad = SceneArt.get('lily_pad.png');
+    if (pad != null) {
+      final dw = w;
+      final dh = math.max(dw * pad.height / pad.width, h + 1);
+      drawArt(c, pad, Rect.fromCenter(center: Offset.zero, width: dw, height: dh));
+      c.drawOval(Rect.fromCenter(center: Offset.zero, width: dw * 0.70, height: dh * 0.6),
+          Paint()..color = const Color(0x55B89AE8));
+      for (var i = 0; i < lines.length; i++) {
+        final cy = (i - (lines.length - 1) / 2) * 24 + 2;
+        drawText(c, lines[i], 19, _c(30, 50, 42), Offset(1, cy + 1.5), bold: true, alpha: 0.7);
+        drawText(c, lines[i], 19, _c(255, 252, 238), Offset(0, cy), bold: true);
+      }
+      return;
+    }
     final top = <Offset>[];
     final bot = <Offset>[];
     for (var i = 0; i < 29; i++) {
@@ -236,23 +295,28 @@ class _WorryLeaf {
       return p..close();
     }
 
-    c.drawPath(poly([...top, ...bot.reversed]), Paint()..color = _c(150, 206, 164));
-    c.drawPath(poly([...top, ...top.reversed.map((o) => Offset(o.dx, 0))]), Paint()..color = _c(168, 220, 180));
+    final body = poly([...top, ...bot.reversed]);
+    c.drawPath(body, Paint()..color = _c(226, 214, 246));
+    c.drawPath(
+        body,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..color = _c(176, 152, 224));
+    c.drawPath(poly([...top, ...top.reversed.map((o) => Offset(o.dx, 0))]), Paint()..color = _c(246, 240, 255));
     final vein = Paint()
-      ..color = _c(110, 170, 130)
+      ..color = _c(184, 164, 230)
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
     c.drawLine(Offset(-w / 2, 0), Offset(-w / 2 + w * 0.10, 0), vein);
     c.drawLine(Offset(-w / 2 + w * 0.90, 0), Offset(w / 2, 0), vein);
     for (var i = 0; i < lines.length; i++) {
       final cy = (i - (lines.length - 1) / 2) * 24;
-      drawText(c, lines[i], 19, _c(46, 86, 66), Offset(0, cy), bold: true);
+      drawText(c, lines[i], 19, _c(78, 56, 136), Offset(0, cy), bold: true);
     }
   }
 }
 
-Offset _leafPos(double age) =>
-    Offset(250 + 24 * age, 470 + 12 * math.sin(age * 0.8) + 5 * math.sin(age * 0.33));
 
 // ================================================================ the scene
 class AnxietyScene extends StatefulWidget {
@@ -271,12 +335,40 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
   List<_WorryLeaf> _leaves = [];
   bool _typing = false;
   double _nextAuto = 2.5;
+  double _nextLotusRip = 1.0;
   int _level = 0;
   Offset? _mouse;
+
+  // ---- layout: landscape (900 x 600) or portrait (600 x tall). The pond, pads and lotuses are designed
+  // on the landscape stage and mapped onto the portrait pond, so only these getters know the difference.
+  bool get _port => Layout.portrait;
+  Rect get _pond => _port ? Rect.fromLTWH(10, 272, Layout.w - 20, Layout.h - 140 - 272) : _pondLand;
+  double get _pcx => _pond.center.dx;
+  double get _pcy => _pond.center.dy;
+  double get _prx => _pond.width / 2;
+  double get _pry => _pond.height / 2;
+  double get _kx => _pond.width / 800;
+  double get _ky => _pond.height / 210;
+  double get _ps => _port ? 0.9 : 1.0; // pad and lotus size
+  double _mapX(double x) => _pond.left + (x - 70) * _kx;
+  double _mapY(double y) => _pond.top + (y - 380) * _ky;
+  Offset get _sunPos => _port ? Offset(Layout.w * 0.8, _pond.top - 190) : const Offset(740, 130);
+  double get _tcy => _port ? Layout.h * 0.36 : 300; // worry box: centre line
+  double get _fieldTop => _port ? _tcy - 20 : _tcy - 32;
+  double get _btnTop => _port ? _tcy + 60 : _tcy + 52;
+
+  bool _inPond(double x, double y, [double margin = 0.92]) =>
+      _port ? _pond.contains(Offset(x, y)) : math.pow((x - _pcx) / _prx, 2) + math.pow((y - _pcy) / _pry, 2) <= margin * margin;
+
+  Offset _leafPos(double age) => _port
+      ? Offset(60 + 17 * age, Layout.h * 0.58 + 12 * math.sin(age * 0.8) + 5 * math.sin(age * 0.33))
+      : Offset(_pond.left + (180 + 24 * age) * _kx,
+      _pond.top + 90 * _ky + 12 * math.sin(age * 0.8) + 5 * math.sin(age * 0.33));
 
   late final List<_Star> _stars;
   late final List<_Firefly> _flies;
   late final List<List<double>> _pads;
+  late final List<List<double>> _echoP; // echo lotus positions on this layout
   late final List<int> _echoOrder;
 
   // Lotus Echo
@@ -299,11 +391,16 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
     const rs = [1.0, 1.0, 1.0, 2.0];
     _stars = [
       for (var i = 0; i < 40; i++)
-        _Star(u(10, kW - 10), u(10, 240), rs[rng.nextInt(4)], u(0.4, 1.4), u(0, 6.28)),
+        _Star(u(10, Layout.w - 10), u(10, _port ? _pond.top - 40 : 240), rs[rng.nextInt(4)], u(0.4, 1.4), u(0, 6.28)),
     ];
-    _flies = [for (var i = 0; i < 14; i++) _Firefly(rng)];
-    _pads = [..._padsRaw]..sort((a, b) => a[1].compareTo(b[1]));
-    _echoOrder = List<int>.generate(_echo.length, (i) => i)..sort((a, b) => _echo[a][1].compareTo(_echo[b][1]));
+    _flies = [for (var i = 0; i < 14; i++) _Firefly(rng, Layout.w, _port ? Layout.h * 0.75 : 520.0)];
+    _pads = [
+      for (final p in _padsRaw) <double>[_mapX(p[0]), _mapY(p[1]), p[2] * _ps, p[3] * _ps, p[4]],
+    ]..sort((a, b) => a[1].compareTo(b[1]));
+    _echoP = _port
+        ? [for (final e in _lotusArt) <double>[e[0], e[1] + 12]] // +12: the hit and glow code expects the pad row
+        : [for (final e in _echo) <double>[_mapX(e[0]), _mapY(e[1])]];
+    _echoOrder = List<int>.generate(_echo.length, (i) => i)..sort((a, b) => _echoP[a][1].compareTo(_echoP[b][1]));
     _level = Levels.get('anxiety');
     _resetEcho();
     Sound.warmAmbient();
@@ -354,7 +451,7 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
 
   void _playNote(int i) {
     _lit[i] = 1.0;
-    final x = _echo[i][0], y = _echo[i][1];
+    final x = _echoP[i][0], y = _echoP[i][1];
     Sound.plink(_echoNotes[i], pan: (x - _pcx) / _prx);
     _spawn(x, y + 12, 0.7);
   }
@@ -413,8 +510,8 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
 
   int? _lotusAt(Offset p) {
     for (var i = 0; i < _echo.length; i++) {
-      final x = _echo[i][0], y = _echo[i][1];
-      if (math.sqrt(math.pow(p.dx - x, 2) + math.pow(p.dy - (y - 12), 2)) <= _hitR) return i;
+      final x = _echoP[i][0], y = _echoP[i][1];
+      if (math.sqrt(math.pow(p.dx - x, 2) + math.pow(p.dy - (y - 12), 2)) <= _hitR * _ps) return i;
     }
     return null;
   }
@@ -502,6 +599,11 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
 
     if (_level == 1) _updateEcho(dt);
 
+    if (_port && _t >= _nextLotusRip) {
+      _nextLotusRip = _t + 1.8 + _rnd.nextDouble() * 2.5;
+      final l = _lotusArt[_rnd.nextInt(_lotusArt.length)];
+      _spawn(l[0] + (_rnd.nextDouble() - 0.5) * 20, l[1] + 22, 0.55);
+    }
     if (_t >= _nextAuto) {
       // a quiet raindrop now and then
       _nextAuto = _t + 5 + _rnd.nextDouble() * 4;
@@ -553,29 +655,47 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
     return _lines[(_t ~/ 13) % _lines.length].replaceAll('{n}', comp.name);
   }
 
+  ui.Image? get _art => _port ? SceneArt.get(_pondArt) : null;
+
   void _drawBackdrop(Canvas c) {
-    drawGradientBg(c, _skyTop, _skyBottom);
-    drawGlow(c, const Offset(740, 130), 130, _c(255, 240, 226), strength: 140);
+    final art = _art;
+    if (art != null) {
+      drawArt(c, art, Rect.fromLTWH(0, 0, Layout.w, _artH));
+      return;
+    }
+    drawGradientBg(c, _skyTop, _skyBottom, w: Layout.w, h: Layout.h);
+    drawGlow(c, _sunPos, 130, _c(255, 240, 226), strength: 140);
     final hills = <List<Object>>[
       [450.0, 424.0, 540.0, 62.0, _c(148, 138, 196)],
       [140.0, 456.0, 340.0, 92.0, _c(124, 114, 176)],
       [790.0, 448.0, 380.0, 82.0, _c(134, 122, 184)],
     ];
     for (final h in hills) {
-      _ellipse(c, h[0] as double, h[1] as double, h[2] as double, h[3] as double, h[4] as Color);
+      final sx = _port ? Layout.w / kW : 1.0;
+      _ellipse(c, (h[0] as double) * sx, (h[1] as double) + (_pond.top - 380), (h[2] as double) * (_port ? sx * 1.3 : 1.0),
+          h[3] as double, h[4] as Color);
     }
-    c.drawCircle(const Offset(740, 130), 26, Paint()..color = _c(255, 248, 238));
+    c.drawCircle(_sunPos, 26, Paint()..color = _c(255, 248, 238));
 
     // twinkling stars
     for (final s in _stars) {
       final b = 0.5 + 0.5 * math.sin(_t * s.sp + s.ph);
-      final sky = lerpColor(_skyTop, _skyBottom, s.y / kH);
+      final sky = lerpColor(_skyTop, _skyBottom, s.y / Layout.h);
       final col = lerpColor(sky, _c(255, 250, 240), 0.25 + 0.65 * b);
       c.drawCircle(Offset(s.x, s.y), s.r, Paint()..color = col);
     }
   }
 
   void _drawWater(Canvas c) {
+    if (_art != null) {
+      c.save();
+      c.clipRect(_pond);
+      for (final r in _ripples) {
+        _drawRing(c, r.x, r.y, _t - r.t0, r.strength);
+      }
+      c.restore();
+      return;
+    }
     c.save();
     c.clipPath(Path()..addOval(_pond));
     c.drawRect(
@@ -583,7 +703,7 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
         Paint()
           ..shader = ui_linear(_pond.topCenter, _pond.bottomCenter, _waterTop, _waterBottom));
     drawGrain(c, _pond, amount: 0.8);
-    drawSoftEllipse(c, const Offset(740, 452), 170, 60, _c(255, 240, 226), 130);
+    drawSoftEllipse(c, Offset(_mapX(740), _mapY(452)), 170 * _kx, 60 * _ky, _c(255, 240, 226), 130);
     for (final r in _ripples) {
       _drawRing(c, r.x, r.y, _t - r.t0, r.strength);
     }
@@ -599,20 +719,31 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
 
   void _drawLotuses(Canvas c) {
     final t = _t;
+    if (_art != null) {
+      // the flowers are in the picture; here they only glow
+      for (var i = 0; i < _lotusArt.length; i++) {
+        final x = _lotusArt[i][0], y = _lotusArt[i][1] - 6;
+        final lit = _level == 1 ? _lit[i] : 0.0;
+        final calm = _level == 1 ? 0.10 : 0.10 + 0.10 * math.sin(t * 0.5 + i * 1.7);
+        final o = math.min(1.0, calm + lit);
+        drawGlow(c, Offset(x, y), 34 + 26 * lit, _c(255, 236, 200), strength: 200 + 40 * lit, opacity: o.clamp(0.0, 1.0));
+      }
+      return;
+    }
     if (_level == 1) {
       for (final i in _echoOrder) {
-        final x = _echo[i][0], y = _echo[i][1];
+        final x = _echoP[i][0], y = _echoP[i][1];
         final ph = i * 1.3;
-        _drawPad(c, x, y, 76, t, ph);
+        _drawPad(c, x, y, 76 * _ps, t, ph);
         final bob = 1.5 * math.sin(t * 0.9 + ph);
-        final fy = y - 76 * 0.36 * 0.10 + bob;
+        final fy = y - 76 * _ps * 0.36 * 0.10 + bob;
         final lit = _lit[i];
         if (lit > 0.02) {
           final gs = 110 + 50 * lit;
           drawGlow(c, Offset(x, fy - 12), gs / 2, _c(255, 236, 190),
               strength: 230, opacity: math.min(1.0, lit));
         }
-        _drawLotus(c, x, fy, 32, 0.75 + 0.25 * math.min(1.0, lit));
+        _drawLotus(c, x, fy, 32 * _ps, 0.75 + 0.25 * math.min(1.0, lit));
       }
     } else {
       for (final p in _pads) {
@@ -649,9 +780,11 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
       final p = _leafPos(age);
       final a = age < _fadeStart ? 1.0 : math.max(0.0, 1 - (age - _fadeStart) / (_leafLife - _fadeStart));
       final r = Rect.fromCenter(center: p, width: leaf.w + 40, height: leaf.h + 40);
-      c.saveLayer(r, Paint()..color = _c(255, 255, 255, a8(a)));
-      c.translate(p.dx, p.dy);
-      c.rotate(-5 * math.sin(age * 0.6) * math.pi / 180);
+      // soft violet shadow and glow on the water under the leaf
+      drawSoftEllipse(c, Offset(p.dx, p.dy + leaf.h / 2 + 8), leaf.w * 1.2, 22, _c(60, 56, 110), 95.0 * a);
+      c.saveLayer(r.inflate(30), Paint()..color = _c(255, 255, 255, a8(a)));
+      c.translate(p.dx, p.dy + 3 * math.sin(age * 1.3));
+      c.rotate((-4 * math.sin(age * 0.6) + 2 * math.sin(age * 1.7)) * math.pi / 180);
       leaf.draw(c);
       c.restore();
     }
@@ -660,8 +793,15 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
       _drawFly(c, f);
     }
 
-    Companion.I.draw(c, const Offset(170, 312), 200, sparkles: false);
-    drawBubble(c, _line(), kW / 2, 20, maxW: 560, size: 22);
+    if (_art != null) {
+      // the companion rests on a lily pad in the near water
+      final py = Layout.h * 0.70;
+      _drawMat(c, 150, py + 84, 190, t);
+      Companion.I.draw(c, Offset(150, py), 190, sparkles: false);
+    } else {
+      Companion.I.draw(c, _port ? Offset(140, _pond.top - 90) : const Offset(170, 312), _port ? 190 : 200, sparkles: false);
+    }
+    drawBubble(c, _line(), Layout.w / 2, _port ? 108 : 20, maxW: _port ? 520 : 560, size: 22);
     if (_level == 1 && _st != 'intro') _drawDots(c);
   }
 
@@ -677,29 +817,35 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
     } else {
       filled = 0;
     }
-    final x0 = kW / 2 - (n - 1) * 11;
+    final x0 = Layout.w / 2 - (n - 1) * 11;
     for (var k = 0; k < n; k++) {
       final col = k < filled ? _c(255, 228, 164) : _c(206, 194, 232);
-      c.drawCircle(Offset(x0 + k * 22, 150), 6, Paint()..color = col);
+      c.drawCircle(Offset(x0 + k * 22, _port ? 250 : 150), 6, Paint()..color = col);
     }
   }
 
   void _drawTyping(Canvas c) {
-    const cx = kW / 2;
-    c.drawRect(const Rect.fromLTWH(0, 0, kW, kH), Paint()..color = _c(36, 24, 70, 120));
-    final panel = Rect.fromCenter(center: const Offset(cx, 300), width: 620, height: 290);
+    final cx = Layout.w / 2, cy = _tcy;
+    c.drawRect(Rect.fromLTWH(0, 0, Layout.w, Layout.h), Paint()..color = _c(36, 24, 70, 120));
+    final panel = _port
+        ? Rect.fromCenter(center: Offset(cx, cy + 10), width: 560, height: 300)
+        : Rect.fromCenter(center: Offset(cx, cy), width: 620, height: 290);
     drawGlass(c, panel, radius: 30, alpha: 235);
-    drawText(c, "What's weighing on you?", 30, kText, const Offset(cx, 200), bold: true);
-    drawText(c, 'Write it down, then let it float away. It is never saved.', 19, kTextDim,
-        const Offset(cx, 238));
-    c.drawRRect(
-        RRect.fromRectAndRadius(const Rect.fromLTWH(cx - 260, 268, 520, 54), const Radius.circular(22)),
+    drawText(c, "What's weighing on you?", 30, kText, Offset(cx, cy - 100), bold: true);
+    if (_port) {
+      drawText(c, 'Write it down, then let it float away.', 19, kTextDim, Offset(cx, cy - 66));
+      drawText(c, 'It is never saved.', 19, kTextDim, Offset(cx, cy - 42));
+    } else {
+      drawText(c, 'Write it down, then let it float away. It is never saved.', 19, kTextDim, Offset(cx, cy - 62));
+    }
+    c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(cx - 260, _fieldTop, 520, 54), const Radius.circular(22)),
         Paint()..color = kCard);
   }
 
   @override
   Widget build(BuildContext context) {
-    const cx = kW / 2;
+    final cx = Layout.w / 2;
+    final port = Layout.portrait;
     return EscScope(
       onEsc: () {
         if (_typing) {
@@ -729,7 +875,7 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
               fit: StackFit.expand,
               children: [
                 CalmButton(
-                  rect: const Rect.fromLTWH(24, 24, 110, 40),
+                  rect: port ? const Rect.fromLTWH(24, 50, 110, 40) : const Rect.fromLTWH(24, 24, 110, 40),
                   title: 'Leave',
                   color: kCalm,
                   hoverColor: kCalmHover,
@@ -738,13 +884,13 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
                   onTap: () => Nav.I.go('home'),
                 ),
                 SoundButton(
-                  rect: const Rect.fromLTWH(kW - 124, 24, 100, 36),
+                  rect: port ? Rect.fromLTWH(Layout.w - 124, 50, 100, 36) : const Rect.fromLTWH(kW - 124, 24, 100, 36),
                   color: kCalm,
                   hoverColor: kCalmHover,
                   textColor: kTextDim,
                 ),
                 CalmButton(
-                  rect: const Rect.fromLTWH(kW - 164, 70, 140, 36),
+                  rect: port ? Rect.fromLTWH(Layout.w / 2 - 70, 50, 140, 36) : const Rect.fromLTWH(kW - 164, 70, 140, 36),
                   title: 'Level: ${Levels.name(_level)}',
                   color: kCalm,
                   hoverColor: kCalmHover,
@@ -753,7 +899,7 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
                   onTap: _toggleLevel,
                 ),
                 CalmButton(
-                  rect: const Rect.fromLTWH(560, 326, 300, 46),
+                  rect: port ? Rect.fromLTWH(60, Layout.h - 114, 480, 50) : const Rect.fromLTWH(560, 326, 300, 46),
                   title: 'Let a worry float away',
                   color: kCalm,
                   hoverColor: kCalmHover,
@@ -773,7 +919,7 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
               ),
             ),
             CalmTextField(
-              rect: const Rect.fromLTWH(cx - 260, 268, 520, 54),
+              rect: Rect.fromLTWH(cx - 260, _fieldTop, 520, 54),
               controller: _ctl,
               hint: 'Type it here',
               maxLength: _maxWorry,
@@ -782,7 +928,7 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
               onSubmit: _submit,
             ),
             CalmButton(
-              rect: const Rect.fromLTWH(cx - 215, 352, 200, 54),
+              rect: Rect.fromLTWH(cx - 215, _btnTop, 200, 54),
               title: 'Let it go',
               color: kAccent,
               hoverColor: kAccentHover,
@@ -791,7 +937,7 @@ class _AnxietySceneState extends State<AnxietyScene> with SceneLoop {
               onTap: _submit,
             ),
             CalmButton(
-              rect: const Rect.fromLTWH(cx + 15, 352, 200, 54),
+              rect: Rect.fromLTWH(cx + 15, _btnTop, 200, 54),
               title: 'Never mind',
               color: kCard,
               hoverColor: kCardHover,

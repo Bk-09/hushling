@@ -1,17 +1,21 @@
 // Stress mode: untangle the threads by dragging the beads (scenes/stress.py).
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
 import '../core/companion.dart';
+import '../core/layout.dart';
 import '../core/levels.dart';
 import '../core/palette.dart';
+import '../core/scene_art.dart';
 import '../core/sound.dart';
 import '../core/ui.dart';
 import '../core/util.dart';
 import '../nav.dart';
 
-const Rect _play = Rect.fromLTWH(210, 112, 650, 410); // the board
+const Rect _playLand = Rect.fromLTWH(210, 112, 650, 410); // the board
 const double _margin = 34; // keeps puzzle beads away from the edge
 
 // ---- difficulty: tune these to make each level easier or harder ----
@@ -25,17 +29,19 @@ const List<_Cfg> _levels = [
   _Cfg(7, 11, 0.30), // Gentle: beads at the start / at most, extra threads
   _Cfg(10, 15, 0.80), // Deeper
 ];
-const double _grabR = 26; // how close a click must be to pick up a bead
+const double _grabR = 32; // how close a click must be to pick up a bead
 const double _hintSeconds = 4.0;
 const double _introSeconds = 14.0;
 
+// the yarn balls (assets/scenes/yarn_ball_0..4.png): pale blue, lilac, peach, pink, mint
+const double _ballAspect = 168 / 156; // width / height of the ball pictures
 const List<Color> _beadColors = [
   Color(0xFFF6AA8C), Color(0xFFB096E0), Color(0xFF8CCEB8), Color(0xFFF4AAC6), Color(0xFF96C4F2),
 ];
 const List<double> _notes = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50]; // one gentle scale
-const Color _calmThread = Color(0xFFA08AD6);
-const Color _warmThread = Color(0xFFF49674);
-const Color _solvedThread = Color(0xFFF0BE78);
+const Color _calmThread = Color(0xFFBDE0F5); // pale blue wool, like the picture
+const Color _warmThread = Color(0xFFF59C86);
+const Color _solvedThread = Color(0xFFFFE2A0);
 const List<Color> _sparkCols = [
   Color(0xFFFFE296), Color(0xFFFFFFFF), Color(0xFFCEBCFF), Color(0xFFFFD6E8), Color(0xFFBAE8FF),
 ];
@@ -113,8 +119,8 @@ class _Puzzle {
 }
 
 /// Builds a planar graph (so a solution always exists), then scrambles the beads.
-_Puzzle _makePuzzle(int n, double extraFrac, math.Random rng) {
-  final w = _play.width - 2 * _margin, h = _play.height - 2 * _margin;
+_Puzzle _makePuzzle(int n, double extraFrac, math.Random rng, Rect play) {
+  final w = play.width - 2 * _margin, h = play.height - 2 * _margin;
   var mind = 0.62 * math.sqrt(w * h / n);
   final pts = <List<double>>[];
   var tries = 0;
@@ -203,26 +209,108 @@ _Puzzle _makePuzzle(int n, double extraFrac, math.Random rng) {
 }
 
 // ================================================================ drawing helpers
-/// One shiny bead centred on [c], [size] pixels wide (make_bead in Python, drawn as vectors).
-void _drawBead(Canvas canvas, Offset c, Color col, double size) {
+/// One ball of yarn centred on [c], [size] pixels wide (the picture for colour [k]).
+void _drawBead(Canvas canvas, Offset c, int k, double size) {
   if (size < 1) return;
-  const s = 128.0;
-  const r = s * 0.44;
-  final shade = Color.fromARGB(255, (col.red * 0.76).toInt(), (col.green * 0.76).toInt(), (col.blue * 0.76).toInt());
-  final light = Color.fromARGB(255, math.min(255, col.red + 52), math.min(255, col.green + 52), math.min(255, col.blue + 52));
-  canvas.save();
-  canvas.translate(c.dx, c.dy);
-  canvas.scale(size / s);
-  canvas.drawCircle(const Offset(0, 3), r, Paint()..color = shade);
-  const steps = 12;
-  for (var k = 0; k <= steps; k++) {
-    final f = k / steps;
-    final rr = math.max(2.0, r * (1 - 0.72 * f));
-    final off = -r * 0.30 * f;
-    canvas.drawCircle(Offset(off, off), rr, Paint()..color = lerpColor(col, light, f));
+  final img = SceneArt.get('yarn_ball_${k % _beadColors.length}.png');
+  if (img == null) {
+    canvas.drawCircle(c, size * 0.45, Paint()..color = _beadColors[k % _beadColors.length]); // until the picture loads
+    return;
   }
-  canvas.drawCircle(const Offset(-r / 3, -r / 3), math.max(2.0, r / 7), Paint()..color = Colors.white);
-  canvas.restore();
+  final h = size / _ballAspect;
+  drawArt(canvas, img, Rect.fromCenter(center: c, width: size, height: h), q: FilterQuality.high);
+}
+
+/// A strand of soft wool lying on the felt, like the loose thread in the picture: it wanders in gentle S-curves
+/// between the two balls (never a ruled line), is slightly fuzzy, and has a soft shadow on the felt.
+void _drawThread(Canvas canvas, Offset a, Offset b, Color col, double t, int idx, {bool glow = false}) {
+  final len = (b - a).distance;
+  if (len < 1) return;
+  final rnd = math.Random(idx * 131 + 17);
+  final dir = (b - a) / len;
+  final nm = Offset(-dir.dy, dir.dx);
+  final waves = math.max(1.0, (len / 95).roundToDouble());
+  final amp = math.min(2.0, len * 0.11) * (0.75 + 0.5 * rnd.nextDouble()) * (1 + 0.04 * math.sin(t * 0.8 + idx));
+  final ph = rnd.nextDouble() * 6.283, ph2 = rnd.nextDouble() * 6.283;
+  final n = math.max(12, (len / 3).ceil());
+  Offset at(double u) {
+    final env = math.pow(math.max(0.0, math.sin(math.pi * u)), 0.7).toDouble(); // both ends come to rest exactly at the balls
+    final off = amp * math.sin(u * math.pi * waves + ph) * env + amp * 0.28 * math.sin(u * math.pi * waves * 2.3 + ph2) * env;
+    return a + dir * (len * u) + nm * off;
+  }
+
+  final pts = <Offset>[for (var i = 0; i <= n; i++) at(i / n)];
+  Path trace(Offset off) {
+    final p = Path()..moveTo(pts.first.dx + off.dx, pts.first.dy + off.dy);
+    for (final q in pts.skip(1)) {
+      p.lineTo(q.dx + off.dx, q.dy + off.dy);
+    }
+    return p;
+  }
+
+  Offset tang(int i) {
+    final d = pts[math.min(n, i + 1)] - pts[math.max(0, i - 1)];
+    final l = d.distance;
+    return l == 0 ? const Offset(1, 0) : d / l;
+  }
+
+  Paint stroke(Color c, double w) {
+    final p = Paint()
+      ..color = c
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+    return p;
+  }
+
+  const w = 4.2; // wool thickness
+  if (glow) {
+    canvas.drawPath(trace(Offset.zero), stroke(col.withAlpha(35), 16));
+    canvas.drawPath(trace(Offset.zero), stroke(col.withAlpha(55), 10));
+  }
+  // soft shadow on the felt, built from a few translucent strokes
+  canvas.drawPath(trace(const Offset(1.5, 3.5)), stroke(const Color(0x1810264A), 9));
+  canvas.drawPath(trace(const Offset(1.5, 3.5)), stroke(const Color(0x2810264A), 6));
+  canvas.drawPath(trace(const Offset(1.2, 2.8)), stroke(const Color(0x3010264A), 4));
+  canvas.drawPath(trace(Offset.zero), stroke(col.withAlpha(50), w + 3.0)); // fuzzy halo
+  final under = lerpColor(col, const Color(0xFF3A6AA8), 0.45);
+  final light = lerpColor(col, Colors.white, 0.55);
+  canvas.drawPath(trace(const Offset(0.5, 0.9)), stroke(under, w)); // the shaded underside
+  canvas.drawPath(trace(Offset.zero), stroke(col, w - 0.9));
+
+  // soft twist: short slanted strokes, low contrast so it reads as wool and not as a rope
+  final lightRidge = <double>[], darkRidge = <double>[];
+  var dist = 0.0;
+  for (var i = 1; i < n; i++) {
+    dist += (pts[i] - pts[i - 1]).distance;
+    final pitch = 3.0 + rnd.nextDouble() * 1.4;
+    if (dist < pitch) continue;
+    dist = 0;
+    final tg = tang(i), nn = Offset(-tg.dy, tg.dx);
+    final u = i / n;
+    final h = (w - 0.8) / 2 * math.min(1.0, math.min(u * len, (1 - u) * len) / 12);
+    final sl = tg * 1.8, p = pts[i];
+    lightRidge.addAll([p.dx - nn.dx * h - sl.dx, p.dy - nn.dy * h - sl.dy, p.dx + nn.dx * h + sl.dx, p.dy + nn.dy * h + sl.dy]);
+    final p2 = p + tg * (pitch * 0.5);
+    darkRidge.addAll([p2.dx - nn.dx * h - sl.dx, p2.dy - nn.dy * h - sl.dy, p2.dx + nn.dx * h + sl.dx, p2.dy + nn.dy * h + sl.dy]);
+  }
+  if (darkRidge.isNotEmpty) canvas.drawRawPoints(ui.PointMode.lines, Float32List.fromList(darkRidge), stroke(under.withAlpha(110), 0.9));
+  if (lightRidge.isNotEmpty) canvas.drawRawPoints(ui.PointMode.lines, Float32List.fromList(lightRidge), stroke(light.withAlpha(120), 0.9));
+  canvas.drawPath(trace(const Offset(-0.6, -0.9)), stroke(light.withAlpha(60), 1.0));
+
+  // fuzz: tiny wisps standing off the wool (one batched draw)
+  final wisps = <double>[];
+  for (var k = 0; k < (len / 5).floor(); k++) {
+    final i = 2 + rnd.nextInt(n - 3);
+    final tg = tang(i), nn = Offset(-tg.dy, tg.dx), p = pts[i];
+    final side = rnd.nextBool() ? 1.0 : -1.0;
+    final l = 1.8 + rnd.nextDouble() * 3.6;
+    final q = p + nn * (side * 1.4), tip = p + nn * (side * l) + tg * (rnd.nextDouble() * 4 - 2);
+    wisps.addAll([q.dx, q.dy, tip.dx, tip.dy]);
+  }
+  if (wisps.isNotEmpty) canvas.drawRawPoints(ui.PointMode.lines, Float32List.fromList(wisps), stroke(light.withAlpha(110), 0.6));
 }
 
 class _Spark {
@@ -259,6 +347,9 @@ class _StressSceneState extends State<StressScene> with SceneLoop {
   double _spawnT = 0;
   String _solvedMsg = '';
 
+  // the board: wide on a landscape screen, a tall panel between the speech bubble and the buttons on a phone
+  Rect get _play => Layout.portrait ? Rect.fromLTWH(40, 240, 520, Layout.h - 240 - 250) : _playLand;
+
   @override
   void initState() {
     super.initState();
@@ -288,7 +379,7 @@ class _StressSceneState extends State<StressScene> with SceneLoop {
   void _newPuzzle() {
     final cfg = _levels[_level];
     final n = math.min(cfg.nmax, cfg.n0 + _round);
-    final pz = _makePuzzle(n, cfg.extra, _rng);
+    final pz = _makePuzzle(n, cfg.extra, _rng, _play);
     _edges = pz.edges;
     final ox = _play.left + _margin, oy = _play.top + _margin;
     _pos = [for (final p in pz.pos) <double>[ox + p[0], oy + p[1]]];
@@ -415,8 +506,15 @@ class _StressSceneState extends State<StressScene> with SceneLoop {
 
   void _draw(Canvas c) {
     final t = _t;
-    drawAmbientBg(c);
-    drawGlass(c, _play.inflate(12), radius: 34, alpha: 120);
+    final felt = SceneArt.get('yarn_bg.jpg');
+    if (felt == null) {
+      drawAmbientBg(c, w: Layout.w, h: Layout.h);
+    } else {
+      // blue felt, filling the screen
+      final sc = math.max(Layout.w / felt.width, Layout.h / felt.height);
+      final fw = felt.width * sc, fh = felt.height * sc;
+      drawArt(c, felt, Rect.fromLTWH((Layout.w - fw) / 2, (Layout.h - fh) / 2, fw, fh), q: FilterQuality.high);
+    }
 
     final hinting = t < _hintUntil;
     final showCross = (_level == 0 || hinting) && !_solved;
@@ -427,27 +525,16 @@ class _StressSceneState extends State<StressScene> with SceneLoop {
       return _calmThread;
     }
 
-    Paint line(double w, Color col, [int alpha = 255]) => Paint()
-      ..color = col.withAlpha(alpha)
-      ..strokeWidth = w
-      ..strokeCap = StrokeCap.butt
-      ..isAntiAlias = true;
-
-    // soft halos under the threads, then the threads (warm ones on top)
-    for (var idx = 0; idx < _edges.length; idx++) {
-      final a = _pos[_edges[idx][0]], b = _pos[_edges[idx][1]];
-      c.drawLine(Offset(a[0], a[1]), Offset(b[0], b[1]), line(13, colour(idx), 55));
-    }
+    // threads: calm ones first, tangled (warm) ones on top
     for (final warm in <bool>[false, true]) {
       for (var idx = 0; idx < _edges.length; idx++) {
         final col = colour(idx);
         if ((col == _warmThread) == warm) {
           final a = _pos[_edges[idx][0]], b = _pos[_edges[idx][1]];
-          c.drawLine(Offset(a[0], a[1]), Offset(b[0], b[1]), line(5, col));
+          _drawThread(c, Offset(a[0], a[1]), Offset(b[0], b[1]), col, t, idx, glow: warm || _solved);
         }
       }
     }
-
     // beads (the one being dragged is drawn last, on top)
     final order = <int>[
       for (var i = 0; i < _pos.length; i++)
@@ -459,15 +546,15 @@ class _StressSceneState extends State<StressScene> with SceneLoop {
       final pop = smooth((t - _spawnT - i * 0.04) / 0.45);
       if (pop <= 0) continue;
       final lifted = i == _drag;
-      drawGlow(c, Offset(x + 3, y + (lifted ? 10 : 6)), 30, const Color(0xFF4A2E52),
+      drawGlow(c, Offset(x + 3, y + (lifted ? 12 : 7)), 36, const Color(0xFF10264A),
           strength: 110, opacity: (lifted ? 150 : 100) / 255);
       if (_solved) {
         final gs = 64 + 8 * math.sin(t * 2 + i);
         drawGlow(c, Offset(x, y), gs / 2, const Color(0xFFFFE296),
             strength: 210, opacity: (160 + 60 * math.sin(t * 2 + i)) / 255);
       }
-      final size = (lifted ? 52.0 : 40.0) * pop;
-      _drawBead(c, Offset(x, y - (lifted ? 4 : 0)), _beadColors[_cols[i]], size);
+      final size = (lifted ? 68.0 : 56.0) * pop;
+      _drawBead(c, Offset(x, y - (lifted ? 4 : 0)), _cols[i], size);
     }
 
     // hint: the most tangled bead pulses
@@ -485,12 +572,14 @@ class _StressSceneState extends State<StressScene> with SceneLoop {
     }
 
     // companion and speech
-    Companion.I.draw(c, const Offset(100, 440), 170, sparkles: false);
-    drawBubble(c, _line(), kW / 2, 20, maxW: 560, size: 22);
+    Companion.I.draw(c, Layout.portrait ? Offset(95, Layout.h - 150) : const Offset(100, 440),
+        Layout.portrait ? 150 : 170, sparkles: false);
+    drawBubble(c, _line(), Layout.w / 2, Layout.portrait ? 108 : 20, maxW: Layout.portrait ? 520 : 560, size: 22);
   }
 
   @override
   Widget build(BuildContext context) {
+    final port = Layout.portrait;
     return EscScope(
       onEsc: () => Nav.I.go('home'),
       child: Stack(
@@ -507,7 +596,7 @@ class _StressSceneState extends State<StressScene> with SceneLoop {
             ),
           ),
           CalmButton(
-            rect: const Rect.fromLTWH(24, 24, 110, 40),
+            rect: port ? const Rect.fromLTWH(24, 50, 110, 40) : const Rect.fromLTWH(24, 24, 110, 40),
             title: 'Leave',
             color: kCalm,
             hoverColor: kCalmHover,
@@ -516,13 +605,13 @@ class _StressSceneState extends State<StressScene> with SceneLoop {
             onTap: () => Nav.I.go('home'),
           ),
           SoundButton(
-            rect: const Rect.fromLTWH(kW - 124, 24, 100, 36),
+            rect: port ? Rect.fromLTWH(Layout.w - 124, 50, 100, 36) : const Rect.fromLTWH(kW - 124, 24, 100, 36),
             color: kCalm,
             hoverColor: kCalmHover,
             textColor: kTextDim,
           ),
           CalmButton(
-            rect: const Rect.fromLTWH(kW - 164, 70, 140, 36),
+            rect: port ? Rect.fromLTWH(Layout.w / 2 - 70, 50, 140, 36) : const Rect.fromLTWH(kW - 164, 70, 140, 36),
             title: 'Level: ${Levels.name(_level)}',
             color: kCalm,
             hoverColor: kCalmHover,
@@ -532,7 +621,7 @@ class _StressSceneState extends State<StressScene> with SceneLoop {
           ),
           if (!_solved)
             CalmButton(
-              rect: const Rect.fromLTWH(367, 548, 130, 40),
+              rect: port ? Rect.fromLTWH(190, Layout.h - 116, 130, 52) : const Rect.fromLTWH(367, 548, 130, 40),
               title: 'Hint',
               color: kCalm,
               hoverColor: kCalmHover,
@@ -541,7 +630,7 @@ class _StressSceneState extends State<StressScene> with SceneLoop {
               onTap: _giveHint,
             ),
           CalmButton(
-            rect: const Rect.fromLTWH(513, 548, 190, 40),
+            rect: port ? Rect.fromLTWH(336, Layout.h - 116, 224, 52) : const Rect.fromLTWH(513, 548, 190, 40),
             title: _solved ? 'Another one' : 'New tangle',
             color: _solved ? kAccent : kCalm,
             hoverColor: _solved ? kAccentHover : kCalmHover,

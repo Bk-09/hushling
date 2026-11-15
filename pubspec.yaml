@@ -34,9 +34,9 @@ flutter_launcher_icons:
     icon_size: 256
 
 flutter:
-  uses-material-design: true
   assets:
     - assets/pets/
+    - assets/scenes/
 
   # Optional font (same as the Python app): download Nunito (free, OFL) from Google Fonts,
   # put Nunito-Regular.ttf and Nunito-Bold.ttf into assets/fonts/, then uncomment this block

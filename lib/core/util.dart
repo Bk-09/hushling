@@ -230,15 +230,17 @@ void drawGrain(Canvas c, Rect r, {double amount = 1.0}) {
   c.drawRect(r, p);
 }
 
-void drawGradientBg(Canvas c, Color top, Color bottom, {double grain = 1.0}) {
-  final r = Rect.fromLTWH(0, 0, kW, kH);
+void drawGradientBg(Canvas c, Color top, Color bottom,
+    {double grain = 1.0, double w = kW, double h = kH}) {
+  final r = Rect.fromLTWH(0, 0, w, h);
   c.drawRect(r, Paint()..shader = ui.Gradient.linear(r.topCenter, r.bottomCenter, [top, bottom]));
   drawGrain(c, r, amount: grain);
 }
 
 /// Grainy pastel gradient with slow drifting colour glows (AmbientBackground).
-void drawAmbientBg(Canvas c) {
-  drawGradientBg(c, kBgTop, kBgBottom);
+void drawAmbientBg(Canvas c, {double w = kW, double h = kH}) {
+  drawGradientBg(c, kBgTop, kBgBottom, w: w, h: h);
+  final sx = w / kW, sy = h / kH;
   final t = nowSeconds();
   // radius, colour, strength, base x, base y, drift x, drift y, speed, phase
   const blobs = <List<double>>[
@@ -250,9 +252,10 @@ void drawAmbientBg(Canvas c) {
   ];
   const cols = <Color>[kGlowPurple, kGlowOrange, kGlowPink, kGlowMint, kGlowSky];
   for (final b in blobs) {
-    final x = b[3] + b[5] * math.sin(t * b[7] + b[8]);
-    final y = b[4] + b[6] * math.cos(t * b[7] * 0.8 + b[8]);
-    drawGlow(c, Offset(x, y), b[0], cols[b[1].toInt()], strength: b[2]);
+    final x = (b[3] + b[5] * math.sin(t * b[7] + b[8])) * sx;
+    final y = (b[4] + b[6] * math.cos(t * b[7] * 0.8 + b[8])) * sy;
+    drawGlow(c, Offset(x, y), b[0] * (sx < sy ? sx : sy).clamp(0.9, 1.4).toDouble(), cols[b[1].toInt()],
+        strength: b[2]);
   }
 }
 

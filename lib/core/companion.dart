@@ -219,7 +219,8 @@ class Companion {
     final m = mood ?? (t < cheerUntil ? 'happy' : 'calm');
     final withSparkles = sparkles ?? (moodArg == null);
 
-    final scale = full ? 1.0 : kStages[idx].scale;
+    const double kCompanionBoost = 1.15; // 1.0 = as now. Try 1.05 to 1.15.
+    final scale = (full ? 1.0 : kStages[idx].scale) * kCompanionBoost;
     final s = math.max(30.0, size * scale * (1 + 0.05 * breath));
     final cx = center.dx, cy = center.dy;
     final ground = cy + size / 2;

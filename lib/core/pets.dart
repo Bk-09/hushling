@@ -9,11 +9,11 @@
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'palette.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
+import 'palette.dart';
 import 'util.dart';
 
 class PetInfo {
@@ -23,7 +23,18 @@ class PetInfo {
   final String group; // cats, dogs, small, birds, magic
   final bool hasBlink;
   final bool hasHappy;
-  const PetInfo(this.id, this.name, this.motion, this.group, this.hasBlink, this.hasHappy);
+  final bool poses; // true: has full-body poses (<id>_sit etc.) that change with mood and over time
+  const PetInfo(this.id, this.name, this.motion, this.group, this.hasBlink, this.hasHappy,
+      [this.poses = false]);
+}
+
+const List<String> kPoseNames = ['sit', 'tilt', 'groom', 'rest', 'belly', 'stretch', 'walk', 'play'];
+
+class _PoseState {
+  String cur;
+  String? prev;
+  double t0 = -10.0;
+  _PoseState(this.cur);
 }
 
 class Motion {
@@ -33,7 +44,7 @@ class Motion {
 }
 
 class Pets {
-  static const String defaultPet = 'orange-tabby';
+  static const String defaultPet = 'grey-tabby';
   static const double blinkEvery = 4.6; // seconds between blinks
   static const double blinkTime = 0.22; // how long each blink lasts
   static const double halo = 0.30; // soft white glow behind each pet (0 = off)
@@ -63,7 +74,7 @@ class Pets {
       for (final p in (d['pets'] as List)) {
         final l = p as List;
         final info = PetInfo(l[0] as String, l[1] as String, l[2] as String, l[3] as String,
-            l.length > 4 && l[4] == true, l.length > 5 && l[5] == true);
+            l.length > 4 && l[4] == true, l.length > 5 && l[5] == true, l.length > 6 && l[6] == true);
         all.add(info);
         byId[info.id] = info;
       }
@@ -162,6 +173,37 @@ class Pets {
     final info = byId[id];
     if (info != null && info.hasBlink) await _load(id, 'blink', '$id|blink');
     if (info != null && info.hasHappy) await _load(id, 'happy', '$id|happy');
+    if (info != null && info.poses) {
+      for (final p in kPoseNames) {
+        if (p != 'sit') await _load(id, p, '$id|$p');
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------ poses
+  // A pet with poses (flag 7 in pets.json) swaps whole-body pictures instead of just blinking:
+  // sitting (the base <id>.png), plus <id>_tilt.png, _groom.png, _rest.png, _belly.png, ...
+  // calm = sits and now and then tilts its head or grooms, happy = belly up, sleepy = lying down.
+  static final Map<String, _PoseState> _poseState = <String, _PoseState>{};
+
+    /// The calm routine: (pose, seconds). Bigger numbers = slower changes.
+  static const List<(String, double)> routine = [
+    ('sit', 14.0), ('tilt', 6.0), ('sit', 14.0), ('groom', 6.0), ('sit', 14.0),
+  ];
+
+  static String poseFor(String mood, double t) {
+    if (mood == 'happy') return 'belly';
+    if (mood == 'sleepy') return 'rest';
+    var total = 0.0;
+    for (final r in routine) {
+      total += r.$2;
+    }
+    var p = t % total;
+    for (final r in routine) {
+      if (p < r.$2) return r.$1;
+      p -= r.$2;
+    }
+    return 'sit';
   }
 
   static Future<void> _load(String id, String variant, String key) async {
@@ -232,7 +274,30 @@ class Pets {
       }
     }
     ui.Image? img;
-    if (variant.isNotEmpty) img = sprite(id, variant);
+    ui.Image? prevImg;
+    var mixIn = 1.0;
+    if (t > 0 && info != null && info.poses) {
+      final want = poseFor(mood, t);
+      var st = _poseState[id];
+      if (st == null) {
+        st = _PoseState(want);
+        _poseState[id] = st;
+      } else if (st.cur != want && sprite(id, want == 'sit' ? '' : want) != null) {
+        // switch only once the new picture is loaded, then cross-fade for 0.4 s
+        st.prev = st.cur;
+        st.cur = want;
+        st.t0 = t;
+      }
+      final p = ((t - st.t0) / 0.8).clamp(0.0, 1.0).toDouble();
+      img = sprite(id, st.cur == 'sit' ? '' : st.cur);
+      final pv = st.prev;
+      if (p < 1.0 && pv != null) {
+        prevImg = sprite(id, pv == 'sit' ? '' : pv);
+        mixIn = p * p * (3 - 2 * p);
+      }
+    } else if (variant.isNotEmpty) {
+      img = sprite(id, variant);
+    }
     img ??= sprite(id, '');
     if (img == null) return false;
 
@@ -257,11 +322,23 @@ class Pets {
       dst = Rect.fromLTWH(-w / 2, -h / 2, w, h);
     }
     if (m.rot.abs() > 0.05) canvas.rotate(-m.rot * math.pi / 180.0); // pygame rotates counter-clockwise
+    if (prevImg != null) {
+      canvas.drawImageRect(
+        prevImg,
+        Rect.fromLTWH(0, 0, prevImg.width.toDouble(), prevImg.height.toDouble()),
+        dst,
+        Paint()
+          ..filterQuality = FilterQuality.medium
+          ..color = Color.fromARGB(a8(1.0 - mixIn), 255, 255, 255),
+      );
+    }
     canvas.drawImageRect(
       img,
       Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
       dst,
-      Paint()..filterQuality = FilterQuality.medium,
+      Paint()
+        ..filterQuality = FilterQuality.medium
+        ..color = Color.fromARGB(prevImg != null ? a8(mixIn) : 255, 255, 255, 255),
     );
     canvas.restore();
     return true;

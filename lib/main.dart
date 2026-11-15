@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import 'core/companion.dart';
+import 'core/layout.dart';
 import 'core/palette.dart';
 import 'core/pets.dart';
 import 'core/sound.dart';
@@ -32,10 +33,10 @@ Future<void> main() async {
     Pets.preload(Companion.I.petId),
   ]);
   if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
-    // the 900x600 stage is designed for landscape
+    // portrait-ready screens use the tall stage, the others the 900x600 landscape stage
     try {
       await SystemChrome.setPreferredOrientations(
-          [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+          [DeviceOrientation.portraitUp, DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } catch (_) {}
   }
@@ -134,25 +135,35 @@ class _StageHostState extends State<StageHost> with SingleTickerProviderStateMix
     final visual = _fade * _fade; // ease the visual alpha: starts quick, settles gently
     return Scaffold(
       backgroundColor: cover,
-      body: Center(
-        child: FittedBox(
-          fit: BoxFit.contain,
-          child: SizedBox(
-            width: kW,
-            height: kH,
-            child: ClipRect(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  KeyedSubtree(key: ValueKey<int>(Nav.I.serial), child: _buildScene(name)),
-                  if (_fade > 0)
-                    IgnorePointer(child: ColoredBox(color: cover.withAlpha(a8(visual)))),
-                ],
+      body: LayoutBuilder(builder: (context, box) {
+        // tall window/phone + a portrait-ready scene -> 600 x tall stage, otherwise 900x600
+        final tall = box.maxHeight > box.maxWidth && kPortraitScenes.contains(name);
+        Layout.portrait = tall;
+        Layout.w = tall ? kPW : kW;
+        Layout.h = tall ? clampD(kPW * box.maxHeight / box.maxWidth, kPMinH, kPMaxH) : kH;
+        return Center(
+          child: FittedBox(
+            fit: BoxFit.contain,
+            child: SizedBox(
+              width: Layout.w,
+              height: Layout.h,
+              child: ClipRect(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // the key restarts the scene when it changes shape (phone rotated)
+                    KeyedSubtree(
+                        key: ValueKey<String>('${Nav.I.serial}-${Layout.portrait}'),
+                        child: _buildScene(name)),
+                    if (_fade > 0)
+                      IgnorePointer(child: ColoredBox(color: cover.withAlpha(a8(visual)))),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      }),
     );
   }
 }

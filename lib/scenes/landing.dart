@@ -3,14 +3,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../core/companion.dart';
+import '../core/layout.dart';
 import '../core/palette.dart';
 import '../core/sound.dart';
 import '../core/ui.dart';
 import '../core/util.dart';
 import '../nav.dart';
 
-const double _cx = 450, _cy = 275; // centre of the light's path
-const double _ax = 270, _ay = 55; // how far it drifts sideways / up and down
 const double _baseSpeed = 2 * math.pi / 16; // one figure-eight about every 16 seconds, slowing down
 const double _end = 78.0; // seconds until the light comes to rest
 
@@ -72,6 +71,12 @@ class _LandingSceneState extends State<LandingScene> with SceneLoop {
     });
   }
 
+  // centre of the light's path and how far it drifts sideways / up and down
+  double get _cx => Layout.w / 2;
+  double get _cy => Layout.portrait ? (Layout.h * 0.5).clamp(500.0, 640.0).toDouble() : 275.0;
+  double get _ax => Layout.portrait ? 205.0 : 270.0;
+  double get _ay => Layout.portrait ? 85.0 : 55.0;
+
   Offset _orbPos() {
     final x = _cx + _ax * math.sin(_theta);
     final y = _cy + _ay * math.sin(2 * _theta);
@@ -106,42 +111,46 @@ class _LandingSceneState extends State<LandingScene> with SceneLoop {
   }
 
   void _words(Canvas c, String main, String hint, double alpha255) {
-    const cx = kW / 2;
+    final port = Layout.portrait;
+    final cx = Layout.w / 2;
     final al = alpha255 / 255.0;
-    var y = 100.0;
-    for (final line in wrapText(main, 32, true, 640)) {
-      drawText(c, line, 32, kDuskText, Offset(cx, y), bold: true, alpha: al);
-      y += 40;
+    final mainSize = port ? 34.0 : 32.0, hintSize = port ? 23.0 : 21.0;
+    final textW = port ? 520.0 : 640.0;
+    var y = port ? 190.0 : 100.0;
+    for (final line in wrapText(main, mainSize, true, textW)) {
+      drawText(c, line, mainSize, kDuskText, Offset(cx, y), bold: true, alpha: al);
+      y += port ? 44 : 40;
     }
     if (hint.isNotEmpty) {
       y += 14;
-      for (final line in wrapText(hint, 21, false, 640)) {
-        drawText(c, line, 21, kDuskDim, Offset(cx, y), alpha: al * 0.9);
-        y += 27;
+      for (final line in wrapText(hint, hintSize, false, textW)) {
+        drawText(c, line, hintSize, kDuskDim, Offset(cx, y), alpha: al * 0.9);
+        y += port ? 30 : 27;
       }
     }
   }
 
   void _draw(Canvas c) {
-    drawGradientBg(c, kDuskTop, kDuskBottom, grain: 0.7);
-    const cx = kW / 2;
+    drawGradientBg(c, kDuskTop, kDuskBottom, grain: 0.7, w: Layout.w, h: Layout.h);
+    final port = Layout.portrait;
+    final cx = Layout.w / 2;
     final comp = Companion.I;
     final p = math.min(1.0, _t / _end);
 
-    drawText(c, 'GENTLE LANDING', 18, kDuskDim, const Offset(cx, 44), alpha: 200 / 255);
+    drawText(c, 'GENTLE LANDING', 18, kDuskDim, Offset(cx, port ? 112 : 44), alpha: 200 / 255);
 
     // faint trail, to make the light easy to follow
     for (var i = 0; i < _trail.length; i++) {
       final op = (10 + 85 * (i + 1) / math.max(1, _trail.length)) / 255;
-      drawGlow(c, _trail[i], 40, const Color(0xFFFFBE8C), strength: 170, opacity: op);
+      drawGlow(c, _trail[i], 40, const Color(0xFF6FB4FF), strength: 170, opacity: op);
     }
 
     // the light: a soft halo that pulses very slowly, with a bright centre
     final o = _orbPos();
     final pulse = 0.5 + 0.5 * math.sin(_t * 0.63);
-    drawGlow(c, o, 150 * (0.80 - 0.10 * p + 0.06 * pulse), const Color(0xFFFFC896),
+    drawGlow(c, o, 150 * (0.80 - 0.10 * p + 0.06 * pulse), const Color(0xFF7DBBFF),
         strength: 190, opacity: (150 + 60 * pulse) / 255);
-    drawGlow(c, o, 46 * (0.95 + 0.05 * pulse), const Color(0xFFFFF2DC), strength: 255);
+    drawGlow(c, o, 46 * (0.95 + 0.05 * pulse), const Color(0xFFE2F1FF), strength: 255);
 
     // words
     if (_t >= _end) {
@@ -160,11 +169,13 @@ class _LandingSceneState extends State<LandingScene> with SceneLoop {
     }
 
     // companion: eyes closed and breathing slowly, then happy at the end
-    comp.draw(c, const Offset(110, 465), 130, mood: _t >= _end ? 'happy' : 'sleepy', breath: pulse);
+    comp.draw(c, port ? Offset(cx, Layout.h - 340) : const Offset(110, 465), port ? 190 : 130,
+        mood: _t >= _end ? 'happy' : 'sleepy', breath: pulse);
   }
 
   @override
   Widget build(BuildContext context) {
+    final port = Layout.portrait;
     return EscScope(
       onEsc: () => Nav.I.go('home'),
       child: Stack(
@@ -172,7 +183,7 @@ class _LandingSceneState extends State<LandingScene> with SceneLoop {
         children: [
           Positioned.fill(child: paintLayer(_draw)),
           CalmButton(
-            rect: Rect.fromLTWH(24, 24, 110, 40),
+            rect: port ? Rect.fromLTWH(24, 50, 110, 40) : Rect.fromLTWH(24, 24, 110, 40),
             title: 'Leave',
             color: kSoft,
             hoverColor: kSoftHover,
@@ -181,14 +192,14 @@ class _LandingSceneState extends State<LandingScene> with SceneLoop {
             onTap: () => Nav.I.go('home'),
           ),
           SoundButton(
-            rect: Rect.fromLTWH(kW - 124, 72, 100, 36),
+            rect: port ? Rect.fromLTWH(Layout.w - 124, 56, 100, 36) : Rect.fromLTWH(kW - 124, 72, 100, 36),
             color: kSoft,
             hoverColor: kSoftHover,
             textColor: kDuskDim,
           ),
           if (_done) ...[
             CalmButton(
-              rect: Rect.fromLTWH(kW / 2 - 265, 505, 250, 56),
+              rect: port ? Rect.fromLTWH(40, Layout.h - 216, 520, 64) : Rect.fromLTWH(kW / 2 - 265, 505, 250, 56),
               title: 'Stay a little longer',
               color: kSoft,
               hoverColor: kSoftHover,
@@ -197,7 +208,7 @@ class _LandingSceneState extends State<LandingScene> with SceneLoop {
               onTap: _restart,
             ),
             CalmButton(
-              rect: Rect.fromLTWH(kW / 2 + 15, 505, 250, 56),
+              rect: port ? Rect.fromLTWH(40, Layout.h - 136, 520, 72) : Rect.fromLTWH(kW / 2 + 15, 505, 250, 56),
               title: 'Back home',
               color: kDark,
               hoverColor: kDarkHover,
